@@ -153,6 +153,7 @@
         document.getElementById('studioTitle').innerText = `${username}님의 라이브 스튜디오`;
 
         // --- 송출자(Host) 자바스크립트 로직 ---
+        // broadcast.html 내부의 startStreaming 함수 부분을 아래와 같이 튜닝해 주세요.
         async function startStreaming() {
             const video = document.getElementById('localVideo');
             const canvas = document.getElementById('captureCanvas');
@@ -161,36 +162,39 @@
             const startBtn = document.getElementById('startBtn');
             
             try {
-                // 1. 브라우저 내장 화면 공유 권한 획득
+                // [해상도 및 FPS 상향 세팅] 
                 const stream = await navigator.mediaDevices.getDisplayMedia({ 
-                    video: { width: 480, height: 360, frameRate: 15 } 
+                    video: { 
+                        width: { ideal: 1280 }, 
+                        height: { ideal: 720 }, 
+                        frameRate: { ideal: 30 } 
+                    } 
                 });
                 video.srcObject = stream;
 
-                // UI 상태 변경 (송출 중 알림)
                 statusIndicator.innerText = "🔴 LIVE 송출 중";
                 statusIndicator.classList.add("streaming");
                 startBtn.style.backgroundColor = "#6c757d";
                 startBtn.innerText = "방송 송출 중...";
                 startBtn.disabled = true;
 
-                // 2. 0.25초(250ms)마다 현재 비디오 렌더링 프레임을 추출해서 서버로 밀어넣음
+                // [전송 주기 50ms로 단축] 초당 20번 전송하여 부드러운 화면 확보
                 setInterval(() => {
-                    canvas.width = 480;
-                    canvas.height = 360;
+                    // 캔버스 드로잉 규격을 720p 픽셀로 확장
+                    canvas.width = 1280;
+                    canvas.height = 720;
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                     
-                    // 용량 감소를 위해 JPEG 포맷 및 퀄리티를 0.4 수준으로 압축
-                    const base64Data = canvas.toDataURL('image/jpeg', 0.4); 
+                    // 해상도가 커진 만큼 데이터 폭증을 막기 위해 압축률을 0.3으로 제어 (가장 중요 🔥)
+                    // 용량이 편당 100KB~150KB 내외로 조절되어 C 소켓 버퍼가 터지지 않습니다.
+                    const base64Data = canvas.toDataURL('image/jpeg', 0.3); 
 
-                    // 비동기 POST 요청 시 어떤 방(room)인지 쿠키값 파라미터를 붙여 전송
                     fetch(`/stream?room=${username}`, {
                         method: 'POST',
                         body: base64Data
                     }).catch(err => console.error("송출 에러:", err));
-                }, 250);
+                }, 50); // 250ms -> 50ms로 단축
 
-                // 유저가 브라우저 자체 '공유 중지' 버튼을 눌렀을 때의 예외 처리
                 stream.getVideoTracks()[0].onended = function () {
                     statusIndicator.innerText = "송출 종료됨";
                     statusIndicator.classList.remove("streaming");

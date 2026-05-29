@@ -315,7 +315,7 @@
                     }
                 })
                 .catch(err => console.error("시청 데이터 수신 에러:", err));
-        }, 250);
+        }, 50);
 
         // 3. 채팅 전송 함수
         function sendChatMessage() {
@@ -337,8 +337,6 @@
                     throw new Error("채팅 전송 실패");
                 }
 
-                // 서버가 채팅을 다시 broadcast하지 않는 구조라면 즉시 화면에 추가
-                addChatMessage(username, message);
                 chatInput.value = "";
             })
             .catch(err => {
@@ -384,7 +382,7 @@
                     }
                 })
                 .catch(err => console.error("채팅 수신 에러:", err));
-        }, 1000);
+        }, 300);
 
         // 5. 사용자가 브라우저 탭을 닫거나 이탈할 때 서버에 시청자 수 -1 신호 전송
         window.addEventListener('beforeunload', () => {

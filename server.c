@@ -12,19 +12,51 @@
 #define PORT 8080
 #define BUFFER_SIZE 65536
 #define MAX_ROOMS 12       
-#define STREAM_SIZE 500000 // 방마다 약 500KB의 고유 프레임 메모리 버퍼 할당
+#define STREAM_SIZE 1500000 // 고해상도 지원을 위한 1.5MB 유지
+#define MAX_CHATS 50        // 한 방당 기억할 최대 최근 채팅 개수
 
+// 개별 채팅 메시지 구조체
+typedef struct {
+    char user[50];
+    char message[256];
+} ChatMessage;
+
+// 방송방 구조체 확장 (채팅 공간 포함)
 typedef struct {
     char room_id[100];   
-    char stream_buffer[STREAM_SIZE]; // [추가] 각 방 마다 개별 할당된 화면 버퍼 공간
+    char stream_buffer[STREAM_SIZE]; 
     int is_active;       
     int viewer_count;    
     time_t last_heartbeat; 
+    
+    // [채팅 자원 추가]
+    ChatMessage chat_list[MAX_CHATS];
+    int chat_count;
 } StreamRoom;
 
 // [글로벌 데이터 공간]
 StreamRoom rooms[MAX_ROOMS] = {0};
 pthread_mutex_t room_mutex = PTHREAD_MUTEX_INITIALIZER; 
+
+// URL 디코딩 헬퍼 함수 (브라우저가 전송한 %20, %ED%96... 등의 한글/특수문자 파싱용)
+void url_decode(const char *src, char *dst) {
+    int i, len = strlen(src);
+    int j = 0;
+    for (i = 0; i < len; i++) {
+        if (src[i] == '%') {
+            if (i + 2 < len) {
+                char hex[3] = { src[i+1], src[i+2], '\0' };
+                dst[j++] = (char)strtol(hex, NULL, 16);
+                i += 2;
+            }
+        } else if (src[i] == '+') {
+            dst[j++] = ' ';
+        } else {
+            dst[j++] = src[i];
+        }
+    }
+    dst[j] = '\0';
+}
 
 void replace_string(char *src, const char *target, const char *replacement, char *dest) {
     char *p = strstr(src, target);
@@ -60,6 +92,7 @@ void send_file(int clnt_sock, const char* file_path) {
     close(fd);
 }
 
+// 템플릿 치환 렌더링 및 페이지네이션 제어
 void send_main_page(int clnt_sock, const char* username, int page) {
     int fd = open("./html/main.html", O_RDONLY);
     if (fd == -1) {
@@ -80,13 +113,12 @@ void send_main_page(int clnt_sock, const char* username, int page) {
     time_t current_time = time(NULL);
     
     pthread_mutex_lock(&room_mutex);
-    // 5초 동안 스트리머의 화면 갱신 패킷이 끊어지면 자동 방 폭파 처리 (Alive 체크 고도화)
     for(int i = 0; i < MAX_ROOMS; i++) {
         if(rooms[i].is_active) {
             if(current_time - rooms[i].last_heartbeat > 5) {
-                printf("[System] 스트리머 %s 님의 송출 중단 확인. 방 폭파.\n", rooms[i].room_id);
                 rooms[i].is_active = 0;
                 rooms[i].viewer_count = 0;
+                rooms[i].chat_count = 0; // 방 폭파 시 채팅 개수도 초기화
                 memset(rooms[i].stream_buffer, 0, STREAM_SIZE);
             } else {
                 total_active_rooms++;
@@ -163,20 +195,20 @@ void send_main_page(int clnt_sock, const char* username, int page) {
     free(buf2);
 }
 
+// 스레드별 작업 할당부
 void* handle_client(void* arg) {
     int clnt_sock = *((int*)arg);
     free(arg); 
     pthread_detach(pthread_self());
 
-    // 스트리밍 데이터 수신을 위해 힙 영역 공간을 넓게 동적 할당
-    char* buffer = (char*)malloc(STREAM_SIZE + 4096);
+    char* buffer = (char*)malloc(STREAM_SIZE + 8192);
     if (buffer == NULL) {
         close(clnt_sock);
         return NULL;
     }
     
-    memset(buffer, 0, STREAM_SIZE + 4096);
-    int read_len = read(clnt_sock, buffer, (STREAM_SIZE + 4096) - 1);
+    memset(buffer, 0, STREAM_SIZE + 8192);
+    int read_len = read(clnt_sock, buffer, (STREAM_SIZE + 8192) - 1);
     if (read_len <= 0) {
         free(buffer);
         close(clnt_sock);
@@ -184,7 +216,7 @@ void* handle_client(void* arg) {
     }
 
     char method[10] = {0};
-    char path[512] = {0}; // 쿼리스트링 파싱 유연성을 위해 늘림
+    char path[512] = {0}; 
     sscanf(buffer, "%s %s", method, path);
 
     char session_username[100] = "Guest";
@@ -228,16 +260,71 @@ void* handle_client(void* arg) {
                 write(clnt_sock, redirect_login, strlen(redirect_login));
             }
         }
-        // [기능 추가 ⭐] 시청 템플릿 서빙 라우팅
+        // 시청 페이지 서빙 시 {{USERNAME}} 치환 가공 처리 추가
         else if (strncmp(path, "/watch", 6) == 0) {
             if (is_logged_in) {
-                send_file(clnt_sock, "./html/watch.html");
+                int fd = open("./html/watch.html", O_RDONLY);
+                if (fd == -1) {
+                    char error_resp[] = "HTTP/1.1 404 Not Found\r\n\r\n<h1>watch.html Not Found</h1>";
+                    write(clnt_sock, error_resp, strlen(error_resp));
+                } else {
+                    struct stat st;
+                    fstat(fd, &st);
+                    char *tmpl = (char*)malloc(st.st_size + 1);
+                    read(fd, tmpl, st.st_size);
+                    tmpl[st.st_size] = '\0';
+                    close(fd);
+
+                    char *final_watch = (char*)malloc(st.st_size + 2000);
+                    replace_string(tmpl, "{{USERNAME}}", session_username, final_watch);
+
+                    char header[256];
+                    sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", strlen(final_watch));
+                    write(clnt_sock, header, strlen(header));
+                    write(clnt_sock, final_watch, strlen(final_watch));
+
+                    free(tmpl);
+                    free(final_watch);
+                }
             } else {
                 char redirect_login[] = "HTTP/1.1 302 Found\r\nLocation: /login\r\n\r\n";
                 write(clnt_sock, redirect_login, strlen(redirect_login));
             }
         }
-        // [기능 추가 ⭐] 특정 스트리머 방의 프레임 버퍼 데이터를 꺼내 시청자 브라우저로 응답하는 API
+        // [기능 보강 ⭐] 브라우저가 정기적으로 긁어가는 채팅 목록 요청 API 처리 (JSON 반환)
+        else if (strncmp(path, "/chat", 5) == 0) {
+            char target_room[100] = {0};
+            char *query = strstr(path, "room=");
+            if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
+
+            char *json_resp = (char*)malloc(32768);
+            strcpy(json_resp, "[");
+
+            pthread_mutex_lock(&room_mutex);
+            for (int i = 0; i < MAX_ROOMS; i++) {
+                if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
+                    for (int j = 0; j < rooms[i].chat_count; j++) {
+                        char chat_element[1024];
+                        // 템플릿의 변수 규격명 {"user": "...", "message": "..."} 포맷 조립
+                        sprintf(chat_element, "{\"user\":\"%s\",\"message\":\"%s\"}", 
+                                rooms[i].chat_list[j].user, rooms[i].chat_list[j].message);
+                        strcat(json_resp, chat_element);
+                        if (j < rooms[i].chat_count - 1) {
+                            strcat(json_resp, ",");
+                        }
+                    }
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&room_mutex);
+            strcat(json_resp, "]");
+
+            char header[256];
+            sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", strlen(json_resp));
+            write(clnt_sock, header, strlen(header));
+            write(clnt_sock, json_resp, strlen(json_resp));
+            free(json_resp);
+        }
         else if (strncmp(path, "/live", 5) == 0) {
             char target_room[100] = {0};
             char *query = strstr(path, "room=");
@@ -250,10 +337,8 @@ void* handle_client(void* arg) {
             int found = 0;
             for (int i = 0; i < MAX_ROOMS; i++) {
                 if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
-                    sprintf(response, 
-                        "HTTP/1.1 200 OK\r\n"
-                        "Content-Type: text/plain\r\n"
-                        "Content-Length: %ld\r\n\r\n%s", strlen(rooms[i].stream_buffer), rooms[i].stream_buffer);
+                    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %ld\r\n\r\n%s", 
+                            strlen(rooms[i].stream_buffer), rooms[i].stream_buffer);
                     found = 1;
                     break;
                 }
@@ -280,14 +365,52 @@ void* handle_client(void* arg) {
         char *body = strstr(buffer, "\r\n\r\n");
         body = (body != NULL) ? body + 4 : "";
 
-        if (strncmp(path, "/stream", 7) == 0) {
+        // [기능 보강 ⭐] 브라우저가 발송한 한글 및 인코딩된 채팅 데이터를 받아서 파싱 후 배열 누적 저장하는 로직
+        if (strncmp(path, "/chat", 5) == 0) {
+            char target_room[100] = {0};
+            char *query = strstr(path, "room=");
+            if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
+
+            // body 분석: user=아이디&message=메시지내용
+            char raw_user[100] = {0}, raw_msg[512] = {0};
+            char decoded_user[100] = {0}, decoded_msg[512] = {0};
+            
+            if (sscanf(body, "user=%[^&]&message=%s", raw_user, raw_msg) == 2) {
+                url_decode(raw_user, decoded_user);
+                url_decode(raw_msg, decoded_msg);
+
+                pthread_mutex_lock(&room_mutex);
+                for (int i = 0; i < MAX_ROOMS; i++) {
+                    if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
+                        // 링 버퍼 형식 처리: 꽉 차면 가장 오래된 채팅(0번) 밀어내고 땡김
+                        if (rooms[i].chat_count >= MAX_CHATS) {
+                            for (int k = 1; k < MAX_CHATS; k++) {
+                                rooms[i].chat_list[k - 1] = rooms[i].chat_list[k];
+                            }
+                            rooms[i].chat_count = MAX_CHATS - 1;
+                        }
+                        
+                        // 새 메시지 추가
+                        int idx = rooms[i].chat_count;
+                        strncpy(rooms[i].chat_list[idx].user, decoded_user, 49);
+                        strncpy(rooms[i].chat_list[idx].message, decoded_msg, 254);
+                        rooms[i].chat_count++;
+                        break;
+                    }
+                }
+                pthread_mutex_unlock(&room_mutex);
+            }
+
+            char ok_resp[] = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+            write(clnt_sock, ok_resp, strlen(ok_resp));
+        }
+        else if (strncmp(path, "/stream", 7) == 0) {
             char target_room[100] = {0};
             char *query = strstr(path, "room=");
             if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
 
             pthread_mutex_lock(&room_mutex);
             int target_idx = -1;
-            
             for (int i = 0; i < MAX_ROOMS; i++) {
                 if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
                     target_idx = i;
@@ -300,6 +423,7 @@ void* handle_client(void* arg) {
                         strcpy(rooms[i].room_id, target_room);
                         rooms[i].is_active = 1;
                         rooms[i].viewer_count = 0;
+                        rooms[i].chat_count = 0; // 초기 생성 시 카운트 리셋
                         target_idx = i;
                         printf("[Server] 신규 라이브 방 개설 감지: %s\n", target_room);
                         break;
@@ -307,7 +431,6 @@ void* handle_client(void* arg) {
                 }
             }
             
-            // 전역 룸 구조체 메모리의 독립 버퍼에 안정적으로 프레임 카피 복사
             if (target_idx != -1) {
                 rooms[target_idx].last_heartbeat = time(NULL);
                 memset(rooms[target_idx].stream_buffer, 0, STREAM_SIZE);
@@ -318,7 +441,6 @@ void* handle_client(void* arg) {
             char ok_resp[] = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
             write(clnt_sock, ok_resp, strlen(ok_resp));
         }
-        // [기능 추가 ⭐] 시청자 입장/퇴장 감지하여 실시간 카운트 가산/차감 처리 API
         else if (strncmp(path, "/viewer_heartbeat", 17) == 0) {
             char target_room[100] = {0};
             char action[20] = {0};
@@ -331,14 +453,8 @@ void* handle_client(void* arg) {
             pthread_mutex_lock(&room_mutex);
             for(int i = 0; i < MAX_ROOMS; i++) {
                 if(rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
-                    if(strcmp(action, "enter") == 0) {
-                        rooms[i].viewer_count++;
-                        printf("[System] 채널 [%s]에 새 시청자 입장. (총 %d명)\n", target_room, rooms[i].viewer_count);
-                    }
-                    else if(strcmp(action, "leave") == 0 && rooms[i].viewer_count > 0) {
-                        rooms[i].viewer_count--;
-                        printf("[System] 채널 [%s]에서 시청자 퇴장. (총 %d명)\n", target_room, rooms[i].viewer_count);
-                    }
+                    if(strcmp(action, "enter") == 0) rooms[i].viewer_count++;
+                    else if(strcmp(action, "leave") == 0 && rooms[i].viewer_count > 0) rooms[i].viewer_count--;
                     break;
                 }
             }
@@ -422,7 +538,7 @@ int main() {
         exit(1);
     }
 
-    printf("Full Functional Streaming Server started on port %d...\n", PORT);
+    printf("Full Functional Streaming & Chat Server started on port %d...\n", PORT);
 
     while (1) {
         clnt_addr_size = sizeof(clnt_addr);
