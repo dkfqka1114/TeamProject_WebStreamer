@@ -11,13 +11,13 @@
         body {
             margin: 0;
             font-family: sans-serif;
-            background-color: #111111; /* 시청 몰입감을 위해 블랙 배경 */
+            background-color: #111111;
             color: #eeeeee;
         }
 
         /* 상단 헤더 */
         header {
-            background-color: #28a745; /* 시청 화면은 초록색 포인트 */
+            background-color: #28a745;
             color: white;
             padding: 16px 40px;
             display: flex;
@@ -44,44 +44,156 @@
             color: #28a745;
         }
 
-        /* 메인 컨테이너 */
+        /* 전체 컨테이너 */
         .container {
-            max-width: 700px;
-            margin: 40px auto;
-            padding: 0 20px;
+            max-width: 1300px;
+            margin: 30px auto;
+            padding: 0 24px;
         }
 
-        .player-box {
-            background-color: #1a1a1a;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-            padding: 30px;
-            text-align: center;
-            border: 1px solid #333;
-        }
-
+        /* 방송 정보 */
         .channel-info {
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
             font-size: 22px;
             font-weight: bold;
             color: #28a745;
-            margin-bottom: 20px;
         }
 
-        /* 실시간 이미지 스크린 뷰어 */
-        img {
+        /* 방송 화면 + 채팅 영역 */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+            align-items: stretch;
+        }
+
+        /* 왼쪽 방송 화면 박스 */
+        .player-box {
+            background-color: #1a1a1a;
+            border-radius: 10px;
+            border: 1px solid #333;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            padding: 20px;
+        }
+
+        .screen-wrapper {
             width: 100%;
-            max-width: 480px;
-            height: 360px;
+            aspect-ratio: 16 / 9;
             background-color: #000;
-            border-radius: 6px;
+            border-radius: 8px;
             border: 2px solid #28a745;
-            object-fit: contain;
-            margin-bottom: 20px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
-        .notice {
+        #playScreen {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background-color: #000;
+        }
+
+        /* 오른쪽 채팅 박스 */
+        .chat-box {
+            background-color: #1a1a1a;
+            border-radius: 10px;
+            border: 1px solid #333;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            min-height: 500px;
+        }
+
+        .chat-header {
+            padding: 16px;
+            border-bottom: 1px solid #333;
+            font-size: 18px;
+            font-weight: bold;
+            color: #28a745;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 14px;
+            overflow-y: auto;
             font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .chat-message {
+            margin-bottom: 10px;
+            word-break: break-word;
+        }
+
+        .chat-user {
+            font-weight: bold;
+            color: #28a745;
+            margin-right: 4px;
+        }
+
+        .chat-system {
             color: #888;
+            font-size: 13px;
+            text-align: center;
+            margin: 12px 0;
+        }
+
+        .chat-input-area {
+            border-top: 1px solid #333;
+            padding: 12px;
+            display: flex;
+            gap: 8px;
+        }
+
+        #chatInput {
+            flex: 1;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background-color: #222;
+            color: #eee;
+            outline: none;
+        }
+
+        #chatInput:focus {
+            border-color: #28a745;
+        }
+
+        #sendBtn {
+            padding: 10px 14px;
+            border: none;
+            border-radius: 4px;
+            background-color: #28a745;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #sendBtn:hover {
+            background-color: #1e7e34;
+        }
+
+        /* 작은 화면 대응 */
+        @media (max-width: 900px) {
+            header {
+                padding: 16px 20px;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .chat-box {
+                min-height: 350px;
+            }
         }
     </style>
 </head>
@@ -93,54 +205,189 @@
     </header>
 
     <div class="container">
-        <section class="player-box">
-            <div id="roomTitle" class="channel-info">📺 채널 연결 중...</div>
-            
-            <img id="playScreen" alt="LIVE 방송 데이터를 대기하고 있습니다." />
-            
-            <p class="notice">서버 전역 멀티 룸 버퍼로부터 화면 데이터를 실시간 수신 중입니다.</p>
-        </section>
+
+        <div id="roomTitle" class="channel-info">
+            📺 채널 연결 중...
+        </div>
+
+        <div class="main-layout">
+
+            <!-- 왼쪽: 방송 화면 -->
+            <section class="player-box">
+                <div class="screen-wrapper">
+                    <img id="playScreen" alt="LIVE 방송 데이터를 대기하고 있습니다.">
+                </div>
+            </section>
+
+            <!-- 오른쪽: 채팅창 -->
+            <aside class="chat-box">
+                <div class="chat-header">
+                    실시간 채팅
+                </div>
+
+                <div id="chatMessages" class="chat-messages">
+                    <div class="chat-system">채팅 서버에 연결 중입니다.</div>
+                </div>
+
+                <div class="chat-input-area">
+                    <input 
+                        type="text" 
+                        id="chatInput" 
+                        placeholder="메시지를 입력하세요"
+                        autocomplete="off"
+                    >
+                    <button id="sendBtn">전송</button>
+                </div>
+            </aside>
+
+        </div>
     </div>
 
     <script>
-        // 주소창 파라미터 (?room=스트리머ID) 추출 및 분석
+        // 주소창 파라미터 (?room=스트리머ID) 추출
         const urlParams = new URLSearchParams(window.location.search);
         const targetRoom = urlParams.get('room');
 
-        if(!targetRoom) {
+        // 서버에서 로그인 사용자명을 치환해서 넣는 방식으로 사용 가능
+        const username = "{{USERNAME}}";
+
+        const roomTitle = document.getElementById('roomTitle');
+        const playScreen = document.getElementById('playScreen');
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        if (!targetRoom) {
             alert("잘못된 채널 접근입니다.");
             window.location.href = "/";
         }
-        
-        document.getElementById('roomTitle').innerText = `📺 [LIVE] ${targetRoom} 님의 방송 시청 중`;
 
-        // 1. 방 입장 시 서버에 시청자 수 +1 카운트 하트비트 신호 전송
+        roomTitle.innerText = `📺 [LIVE] ${targetRoom} 님의 방송 시청 중`;
+
+        // 채팅 메시지 추가 함수
+        function addChatMessage(user, message) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-message';
+
+            const userSpan = document.createElement('span');
+            userSpan.className = 'chat-user';
+            userSpan.innerText = user + ":";
+
+            const messageSpan = document.createElement('span');
+            messageSpan.innerText = " " + message;
+
+            msgDiv.appendChild(userSpan);
+            msgDiv.appendChild(messageSpan);
+            chatMessages.appendChild(msgDiv);
+
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // 시스템 메시지 추가 함수
+        function addSystemMessage(message) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-system';
+            msgDiv.innerText = message;
+            chatMessages.appendChild(msgDiv);
+
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // 1. 방 입장 시 서버에 시청자 수 +1 신호 전송
         fetch(`/viewer_heartbeat?room=${targetRoom}&action=enter`, { method: 'POST' })
             .catch(err => console.error(err));
 
-        // 2. 0.25초(250ms)마다 해당 타겟 스트리머의 고유 버퍼 경로만 조준하여 단발성 Pulling
+        // 2. 0.25초마다 해당 방송자의 화면 데이터 요청
         const streamInterval = setInterval(() => {
             fetch(`/live?room=${targetRoom}`)
                 .then(res => {
-                    if(res.status === 404) {
-                        document.getElementById('roomTitle').innerText = `❌ 방송이 종료된 채널입니다.`;
-                        document.getElementById('playScreen').alt = "스트리머가 방송을 종료했습니다.";
-                        clearInterval(streamInterval); // 스트리밍 인터벌 해제
+                    if (res.status === 404) {
+                        roomTitle.innerText = `❌ 방송이 종료된 채널입니다.`;
+                        playScreen.alt = "스트리머가 방송을 종료했습니다.";
+                        clearInterval(streamInterval);
                         return "";
                     }
                     return res.text();
                 })
                 .then(data => {
-                    // 수신된 데이터가 정상적인 Base64 데이터 형식이면 이미지 src 교체
                     if (data && data.startsWith("data:image/jpeg")) {
-                        document.getElementById('playScreen').src = data;
+                        playScreen.src = data;
                     }
-                }).catch(err => console.error("시청 데이터 수신 에러:", err));
+                })
+                .catch(err => console.error("시청 데이터 수신 에러:", err));
         }, 250);
 
-        // 3. 사용자가 브라우저 탭을 닫거나 이탈할 때 서버에 시청자 수 -1 다운 신호 전달
+        // 3. 채팅 전송 함수
+        function sendChatMessage() {
+            const message = chatInput.value.trim();
+
+            if (!message) {
+                return;
+            }
+
+            fetch(`/chat?room=${targetRoom}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `user=${encodeURIComponent(username)}&message=${encodeURIComponent(message)}`
+            })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error("채팅 전송 실패");
+                }
+
+                // 서버가 채팅을 다시 broadcast하지 않는 구조라면 즉시 화면에 추가
+                addChatMessage(username, message);
+                chatInput.value = "";
+            })
+            .catch(err => {
+                console.error("채팅 전송 에러:", err);
+                addSystemMessage("채팅 전송에 실패했습니다.");
+            });
+        }
+
+        sendBtn.addEventListener('click', sendChatMessage);
+
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                sendChatMessage();
+            }
+        });
+
+        // 4. 채팅 수신 Polling
+        // 서버에서 채팅 목록을 JSON 형태로 반환한다고 가정
+        // 예: [{ "user": "user02", "message": "안녕하세요" }]
+        let lastChatCount = 0;
+
+        const chatInterval = setInterval(() => {
+            fetch(`/chat?room=${targetRoom}`)
+                .then(res => {
+                    if (!res.ok) {
+                        return [];
+                    }
+                    return res.json();
+                })
+                .then(messages => {
+                    if (!Array.isArray(messages)) {
+                        return;
+                    }
+
+                    if (messages.length > lastChatCount) {
+                        const newMessages = messages.slice(lastChatCount);
+
+                        newMessages.forEach(msg => {
+                            addChatMessage(msg.user, msg.message);
+                        });
+
+                        lastChatCount = messages.length;
+                    }
+                })
+                .catch(err => console.error("채팅 수신 에러:", err));
+        }, 1000);
+
+        // 5. 사용자가 브라우저 탭을 닫거나 이탈할 때 서버에 시청자 수 -1 신호 전송
         window.addEventListener('beforeunload', () => {
-            // 브라우저가 꺼지는 순간에도 신뢰성 있게 비동기 패킷 전송을 보장하는 sendBeacon 활용
             navigator.sendBeacon(`/viewer_heartbeat?room=${targetRoom}&action=leave`);
         });
     </script>
