@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Streamer - Main</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+
+        /* 상단 헤더 */
+        header {
+            background-color: #007bff;
+            color: white;
+            padding: 16px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .user-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .logout-btn {
+            color: white;
+            text-decoration: none;
+            border: 1px solid white;
+            padding: 6px 12px;
+            border-radius: 4px;
+        }
+
+        .logout-btn:hover {
+            background-color: white;
+            color: #007bff;
+        }
+
+        /* 전체 컨테이너 */
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        /* 환영 영역 */
+        .welcome-section {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .welcome-section h2 {
+            margin-top: 0;
+            font-size: 28px;
+            color: #333;
+        }
+
+        .welcome-section p {
+            color: #666;
+            margin-bottom: 25px;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .main-btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .main-btn:hover {
+            background-color: #0056b3;
+        }
+
+        .sub-btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .sub-btn:hover {
+            background-color: #545b62;
+        }
+
+        /* 방송 목록 영역 */
+        .stream-section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 22px;
+            margin-bottom: 15px;
+        }
+
+        .stream-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+        }
+
+        .stream-card {
+            background-color: white;
+            padding: 22px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        .stream-card h3 {
+            margin-top: 0;
+            margin-bottom: 12px;
+            color: #333;
+        }
+
+        .stream-card p {
+            margin: 8px 0;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .watch-btn {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 10px 16px;
+            background-color: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .watch-btn:hover {
+            background-color: #1e7e34;
+        }
+
+        /* 서버 상태 영역 */
+        .status-box {
+            background-color: white;
+            padding: 18px 22px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .status-item strong {
+            color: #333;
+        }
+
+        .online {
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        /* 작은 화면 대응 */
+        @media (max-width: 600px) {
+            header {
+                padding: 16px 20px;
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+
+            .welcome-section h2 {
+                font-size: 24px;
+            }
+
+            .status-box {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 상단 메뉴 -->
+    <header>
+        <h1>Web Streamer</h1>
+        <div class="user-area">
+            <!-- 실제 서버 구현 시 username 부분을 로그인한 사용자명으로 바꾸면 됨 -->
+            <span>사용자님 환영합니다</span>
+            <a href="/logout" class="logout-btn">로그아웃</a>
+        </div>
+    </header>
+
+    <div class="container">
+
+        <!-- 환영 및 주요 기능 영역 -->
+        <section class="welcome-section">
+            <h2>Web Streamer 메인 화면</h2>
+            <p>방송을 시작하거나 현재 진행 중인 방송을 시청해보세요.</p>
+
+            <div class="button-group">
+                <!-- 방송 송출 화면으로 이동 -->
+                <a href="/broadcast" class="main-btn">방송 시작하기</a>
+
+                <!-- 현재는 같은 페이지 새로고침 역할 -->
+                <a href="/main" class="sub-btn">방송 목록 새로고침</a>
+            </div>
+        </section>
+
+        <!-- 현재 방송 목록 -->
+        <section class="stream-section">
+            <h2 class="section-title">현재 진행 중인 방송</h2>
+
+            <div class="stream-list">
+
+                <!-- 예시 방송 카드 1 -->
+                <div class="stream-card">
+                    <h3>게임 방송</h3>
+                    <p><strong>방송자:</strong> user01</p>
+                    <p><strong>시청자 수:</strong> 3명</p>
+                    <p><strong>상태:</strong> <span class="online">LIVE</span></p>
+                    <a href="/watch?stream=1" class="watch-btn">시청하기</a>
+                </div>
+
+                <!-- 예시 방송 카드 2 -->
+                <div class="stream-card">
+                    <h3>음악 방송</h3>
+                    <p><strong>방송자:</strong> user02</p>
+                    <p><strong>시청자 수:</strong> 5명</p>
+                    <p><strong>상태:</strong> <span class="online">LIVE</span></p>
+                    <a href="/watch?stream=2" class="watch-btn">시청하기</a>
+                </div>
+
+                <!-- 예시 방송 카드 3 -->
+                <div class="stream-card">
+                    <h3>자유 방송</h3>
+                    <p><strong>방송자:</strong> user03</p>
+                    <p><strong>시청자 수:</strong> 2명</p>
+                    <p><strong>상태:</strong> <span class="online">LIVE</span></p>
+                    <a href="/watch?stream=3" class="watch-btn">시청하기</a>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- 서버 상태 표시 -->
+        <div class="status-box">
+            <div class="status-item">
+                <strong>서버 상태:</strong> <span class="online">연결됨</span>
+            </div>
+            <div class="status-item">
+                <strong>현재 접속자 수:</strong> 10명
+            </div>
+            <div class="status-item">
+                <strong>채팅 서버:</strong> 사용 가능
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>
