@@ -7,26 +7,25 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <pthread.h>
-#include <time.h> // 라이브 타임아웃 검증용 헤더
+#include <time.h> 
 
 #define PORT 8080
 #define BUFFER_SIZE 65536
 #define MAX_ROOMS 12       
-#define STREAM_SIZE 500000
+#define STREAM_SIZE 500000 // 방마다 약 500KB의 고유 프레임 메모리 버퍼 할당
 
-// 방송방 정보를 담을 구조체 확장
 typedef struct {
-    char room_id[100];   // 방송자 유저네임
-    int is_active;       // 현재 방송 중 상태 (1: 방송 중, 0: 꺼짐)
-    int viewer_count;    // 시청자 수
-    time_t last_heartbeat; // 마지막으로 캡처 프레임 패킷을 보낸 시간 (자동 종료용)
+    char room_id[100];   
+    char stream_buffer[STREAM_SIZE]; // [추가] 각 방 마다 개별 할당된 화면 버퍼 공간
+    int is_active;       
+    int viewer_count;    
+    time_t last_heartbeat; 
 } StreamRoom;
 
 // [글로벌 데이터 공간]
 StreamRoom rooms[MAX_ROOMS] = {0};
 pthread_mutex_t room_mutex = PTHREAD_MUTEX_INITIALIZER; 
 
-// 문자열 치환 헬퍼 함수
 void replace_string(char *src, const char *target, const char *replacement, char *dest) {
     char *p = strstr(src, target);
     if (!p) {
@@ -38,7 +37,6 @@ void replace_string(char *src, const char *target, const char *replacement, char
     sprintf(dest + (p - src), "%s%s", replacement, p + strlen(target));
 }
 
-// 정적 HTML 파일 전송
 void send_file(int clnt_sock, const char* file_path) {
     int fd = open(file_path, O_RDONLY);
     if (fd == -1) {
@@ -62,7 +60,6 @@ void send_file(int clnt_sock, const char* file_path) {
     close(fd);
 }
 
-// 로비 목록 가공 및 전송 (타임아웃 감지 로직 내장)
 void send_main_page(int clnt_sock, const char* username, int page) {
     int fd = open("./html/main.html", O_RDONLY);
     if (fd == -1) {
@@ -83,13 +80,14 @@ void send_main_page(int clnt_sock, const char* username, int page) {
     time_t current_time = time(NULL);
     
     pthread_mutex_lock(&room_mutex);
-    // [가산점 포인트] 송출을 시작해놓고 창을 그냥 꺼버린 스트리머 감지 (3초 이상 패킷이 안 오면 목록에서 해제)
+    // 5초 동안 스트리머의 화면 갱신 패킷이 끊어지면 자동 방 폭파 처리 (Alive 체크 고도화)
     for(int i = 0; i < MAX_ROOMS; i++) {
         if(rooms[i].is_active) {
-            if(current_time - rooms[i].last_heartbeat > 3) {
-                printf("[System] 스트리머 %s 님의 연결 유실 감지. 채널 자동 비활성화.\n", rooms[i].room_id);
+            if(current_time - rooms[i].last_heartbeat > 5) {
+                printf("[System] 스트리머 %s 님의 송출 중단 확인. 방 폭파.\n", rooms[i].room_id);
                 rooms[i].is_active = 0;
                 rooms[i].viewer_count = 0;
+                memset(rooms[i].stream_buffer, 0, STREAM_SIZE);
             } else {
                 total_active_rooms++;
             }
@@ -113,7 +111,7 @@ void send_main_page(int clnt_sock, const char* username, int page) {
                 char row_buffer[1024];
                 sprintf(row_buffer, 
                     "<div class=\"stream-row\">"
-                    "   <div class=\"stream-title\">🎬 %s 님의 실시간 라이브 방송 대기방</div>"
+                    "   <div class=\"stream-title\">🎬 %s 님의 라이브 방송 채널</div>"
                     "   <div>%s</div>"
                     "   <div class=\"viewer-count\">%d명 시청 중</div>"
                     "   <div><a href=\"/watch?room=%s\" target=\"_blank\" class=\"watch-btn\">시청하기</a></div>"
@@ -170,14 +168,15 @@ void* handle_client(void* arg) {
     free(arg); 
     pthread_detach(pthread_self());
 
-    char* buffer = (char*)malloc(BUFFER_SIZE);
+    // 스트리밍 데이터 수신을 위해 힙 영역 공간을 넓게 동적 할당
+    char* buffer = (char*)malloc(STREAM_SIZE + 4096);
     if (buffer == NULL) {
         close(clnt_sock);
         return NULL;
     }
     
-    memset(buffer, 0, BUFFER_SIZE);
-    int read_len = read(clnt_sock, buffer, BUFFER_SIZE - 1);
+    memset(buffer, 0, STREAM_SIZE + 4096);
+    int read_len = read(clnt_sock, buffer, (STREAM_SIZE + 4096) - 1);
     if (read_len <= 0) {
         free(buffer);
         close(clnt_sock);
@@ -185,7 +184,7 @@ void* handle_client(void* arg) {
     }
 
     char method[10] = {0};
-    char path[255] = {0};
+    char path[512] = {0}; // 쿼리스트링 파싱 유연성을 위해 늘림
     sscanf(buffer, "%s %s", method, path);
 
     char session_username[100] = "Guest";
@@ -229,6 +228,44 @@ void* handle_client(void* arg) {
                 write(clnt_sock, redirect_login, strlen(redirect_login));
             }
         }
+        // [기능 추가 ⭐] 시청 템플릿 서빙 라우팅
+        else if (strncmp(path, "/watch", 6) == 0) {
+            if (is_logged_in) {
+                send_file(clnt_sock, "./html/watch.html");
+            } else {
+                char redirect_login[] = "HTTP/1.1 302 Found\r\nLocation: /login\r\n\r\n";
+                write(clnt_sock, redirect_login, strlen(redirect_login));
+            }
+        }
+        // [기능 추가 ⭐] 특정 스트리머 방의 프레임 버퍼 데이터를 꺼내 시청자 브라우저로 응답하는 API
+        else if (strncmp(path, "/live", 5) == 0) {
+            char target_room[100] = {0};
+            char *query = strstr(path, "room=");
+            if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
+
+            char* response = (char*)malloc(STREAM_SIZE + 1024);
+            memset(response, 0, STREAM_SIZE + 1024);
+
+            pthread_mutex_lock(&room_mutex);
+            int found = 0;
+            for (int i = 0; i < MAX_ROOMS; i++) {
+                if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
+                    sprintf(response, 
+                        "HTTP/1.1 200 OK\r\n"
+                        "Content-Type: text/plain\r\n"
+                        "Content-Length: %ld\r\n\r\n%s", strlen(rooms[i].stream_buffer), rooms[i].stream_buffer);
+                    found = 1;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&room_mutex);
+
+            if (!found) {
+                sprintf(response, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+            }
+            write(clnt_sock, response, strlen(response));
+            free(response);
+        }
         else if (strcmp(path, "/logout") == 0) {
             char logout_resp[] = "HTTP/1.1 302 Found\r\nSet-Cookie: user=; Max-Age=0; Path=/\r\nLocation: /login\r\n\r\n";
             write(clnt_sock, logout_resp, strlen(logout_resp));
@@ -243,23 +280,20 @@ void* handle_client(void* arg) {
         char *body = strstr(buffer, "\r\n\r\n");
         body = (body != NULL) ? body + 4 : "";
 
-        // [핵심 변경 및 연동 완료 🚀] 브로드캐스트에서 화면 프레임 POST 신호가 도달할 때의 임계 구간
         if (strncmp(path, "/stream", 7) == 0) {
             char target_room[100] = {0};
             char *query = strstr(path, "room=");
-            if (query != NULL) sscanf(query, "room=%[^&\r\n]", target_room);
+            if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
 
             pthread_mutex_lock(&room_mutex);
             int target_idx = -1;
             
-            // 기존에 해당 스트리머가 개설한 룸이 활성화되어 있는지 선점 확인
             for (int i = 0; i < MAX_ROOMS; i++) {
                 if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
                     target_idx = i;
                     break;
                 }
             }
-            // 목록에 없는 새로운 스트리머라면 빈 슬롯을 찾아 방 실시간 생성 및 활성화
             if (target_idx == -1) {
                 for (int i = 0; i < MAX_ROOMS; i++) {
                     if (!rooms[i].is_active) {
@@ -267,15 +301,46 @@ void* handle_client(void* arg) {
                         rooms[i].is_active = 1;
                         rooms[i].viewer_count = 0;
                         target_idx = i;
-                        printf("[Server Cluster] 스트리머 '%s' 님의 방송방 개설 감지 -> 전역 목록 바인딩 완료.\n", target_room);
+                        printf("[Server] 신규 라이브 방 개설 감지: %s\n", target_room);
                         break;
                     }
                 }
             }
             
-            // 방송 룸 활성화 타임스탬프 최신화 (Alive 체크)
+            // 전역 룸 구조체 메모리의 독립 버퍼에 안정적으로 프레임 카피 복사
             if (target_idx != -1) {
                 rooms[target_idx].last_heartbeat = time(NULL);
+                memset(rooms[target_idx].stream_buffer, 0, STREAM_SIZE);
+                strncpy(rooms[target_idx].stream_buffer, body, STREAM_SIZE - 1);
+            }
+            pthread_mutex_unlock(&room_mutex);
+
+            char ok_resp[] = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+            write(clnt_sock, ok_resp, strlen(ok_resp));
+        }
+        // [기능 추가 ⭐] 시청자 입장/퇴장 감지하여 실시간 카운트 가산/차감 처리 API
+        else if (strncmp(path, "/viewer_heartbeat", 17) == 0) {
+            char target_room[100] = {0};
+            char action[20] = {0};
+            
+            char *query_room = strstr(path, "room=");
+            if (query_room != NULL) sscanf(query_room, "room=%[^& ]", target_room);
+            char *query_act = strstr(path, "action=");
+            if (query_act != NULL) sscanf(query_act, "action=%[^&\r\n ]", action);
+
+            pthread_mutex_lock(&room_mutex);
+            for(int i = 0; i < MAX_ROOMS; i++) {
+                if(rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
+                    if(strcmp(action, "enter") == 0) {
+                        rooms[i].viewer_count++;
+                        printf("[System] 채널 [%s]에 새 시청자 입장. (총 %d명)\n", target_room, rooms[i].viewer_count);
+                    }
+                    else if(strcmp(action, "leave") == 0 && rooms[i].viewer_count > 0) {
+                        rooms[i].viewer_count--;
+                        printf("[System] 채널 [%s]에서 시청자 퇴장. (총 %d명)\n", target_room, rooms[i].viewer_count);
+                    }
+                    break;
+                }
             }
             pthread_mutex_unlock(&room_mutex);
 
@@ -339,8 +404,6 @@ int main() {
     struct sockaddr_in serv_addr, clnt_addr;
     socklen_t clnt_addr_size;
 
-    // 수동 더미 배치 대신 이제 클라이언트 런타임 인터랙션 신호에 전적으로 위임하므로 초기화 상태 유지
-
     serv_sock = socket(PF_INET, SOCK_STREAM, 0);
     int option = 1;
     setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
@@ -359,7 +422,7 @@ int main() {
         exit(1);
     }
 
-    printf("Dynamic Sync Multi-Threaded Server started on port %d...\n", PORT);
+    printf("Full Functional Streaming Server started on port %d...\n", PORT);
 
     while (1) {
         clnt_addr_size = sizeof(clnt_addr);

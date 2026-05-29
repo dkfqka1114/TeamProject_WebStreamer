@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Streamer - 플레이어</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            background-color: #111111; /* 시청 몰입감을 위해 블랙 배경 */
+            color: #eeeeee;
+        }
+
+        /* 상단 헤더 */
+        header {
+            background-color: #28a745; /* 시청 화면은 초록색 포인트 */
+            color: white;
+            padding: 16px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .back-btn {
+            color: white;
+            text-decoration: none;
+            border: 1px solid white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .back-btn:hover {
+            background-color: white;
+            color: #28a745;
+        }
+
+        /* 메인 컨테이너 */
+        .container {
+            max-width: 700px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .player-box {
+            background-color: #1a1a1a;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            padding: 30px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+
+        .channel-info {
+            font-size: 22px;
+            font-weight: bold;
+            color: #28a745;
+            margin-bottom: 20px;
+        }
+
+        /* 실시간 이미지 스크린 뷰어 */
+        img {
+            width: 100%;
+            max-width: 480px;
+            height: 360px;
+            background-color: #000;
+            border-radius: 6px;
+            border: 2px solid #28a745;
+            object-fit: contain;
+            margin-bottom: 20px;
+        }
+
+        .notice {
+            font-size: 14px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Web Streamer Player</h1>
+        <a href="/" class="back-btn">로비로 이동</a>
+    </header>
+
+    <div class="container">
+        <section class="player-box">
+            <div id="roomTitle" class="channel-info">📺 채널 연결 중...</div>
+            
+            <img id="playScreen" alt="LIVE 방송 데이터를 대기하고 있습니다." />
+            
+            <p class="notice">서버 전역 멀티 룸 버퍼로부터 화면 데이터를 실시간 수신 중입니다.</p>
+        </section>
+    </div>
+
+    <script>
+        // 주소창 파라미터 (?room=스트리머ID) 추출 및 분석
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetRoom = urlParams.get('room');
+
+        if(!targetRoom) {
+            alert("잘못된 채널 접근입니다.");
+            window.location.href = "/";
+        }
+        
+        document.getElementById('roomTitle').innerText = `📺 [LIVE] ${targetRoom} 님의 방송 시청 중`;
+
+        // 1. 방 입장 시 서버에 시청자 수 +1 카운트 하트비트 신호 전송
+        fetch(`/viewer_heartbeat?room=${targetRoom}&action=enter`, { method: 'POST' })
+            .catch(err => console.error(err));
+
+        // 2. 0.25초(250ms)마다 해당 타겟 스트리머의 고유 버퍼 경로만 조준하여 단발성 Pulling
+        const streamInterval = setInterval(() => {
+            fetch(`/live?room=${targetRoom}`)
+                .then(res => {
+                    if(res.status === 404) {
+                        document.getElementById('roomTitle').innerText = `❌ 방송이 종료된 채널입니다.`;
+                        document.getElementById('playScreen').alt = "스트리머가 방송을 종료했습니다.";
+                        clearInterval(streamInterval); // 스트리밍 인터벌 해제
+                        return "";
+                    }
+                    return res.text();
+                })
+                .then(data => {
+                    // 수신된 데이터가 정상적인 Base64 데이터 형식이면 이미지 src 교체
+                    if (data && data.startsWith("data:image/jpeg")) {
+                        document.getElementById('playScreen').src = data;
+                    }
+                }).catch(err => console.error("시청 데이터 수신 에러:", err));
+        }, 250);
+
+        // 3. 사용자가 브라우저 탭을 닫거나 이탈할 때 서버에 시청자 수 -1 다운 신호 전달
+        window.addEventListener('beforeunload', () => {
+            // 브라우저가 꺼지는 순간에도 신뢰성 있게 비동기 패킷 전송을 보장하는 sendBeacon 활용
+            navigator.sendBeacon(`/viewer_heartbeat?room=${targetRoom}&action=leave`);
+        });
+    </script>
+</body>
+</html>
