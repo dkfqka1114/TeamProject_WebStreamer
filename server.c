@@ -64,7 +64,7 @@ void send_file(int clnt_sock, const char* file_path) {
 
 // 로비 목록 가공 및 전송 (타임아웃 감지 로직 내장)
 void send_main_page(int clnt_sock, const char* username, int page) {
-    int fd = open("./html/main2.html", O_RDONLY);
+    int fd = open("./html/main.html", O_RDONLY);
     if (fd == -1) {
         char error_resp[] = "HTTP/1.1 404 Not Found\r\n\r\n<h1>main2.html Not Found</h1>";
         write(clnt_sock, error_resp, strlen(error_resp));
