@@ -15,11 +15,14 @@
 <body>
     <div class="login-container">
         <h2>Web Streamer</h2>
-        <form action="/login_process" method="POST">
+        <form action="/login" method="POST">
             <input type="text" name="username" placeholder="아이디" required>
             <input type="password" name="password" placeholder="비밀번호" required>
             <button type="submit">로그인</button>
         </form>
+        <div style="text-align: center; margin-top: 15px;">
+            <a href="/register" style="color: #007bff; text-decoration: none; font-size: 14px;">회원가입</a>
+        </div>
     </div>
 </body>
 </html>
