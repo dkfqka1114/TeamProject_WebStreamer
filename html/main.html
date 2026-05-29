@@ -57,137 +57,155 @@
             padding: 0 20px;
         }
 
-        /* 환영 영역 */
-        .welcome-section {
+        /* 방송 목록 박스 */
+        .stream-box {
             background-color: white;
-            padding: 30px;
             border-radius: 10px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            text-align: center;
-            margin-bottom: 30px;
+            overflow: hidden;
         }
 
-        .welcome-section h2 {
-            margin-top: 0;
-            font-size: 28px;
-            color: #333;
-        }
-
-        .welcome-section p {
-            color: #666;
-            margin-bottom: 25px;
-        }
-
-        .button-group {
+        .stream-box-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e5e5e5;
             display: flex;
-            justify-content: center;
-            gap: 15px;
-            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .main-btn {
-            display: inline-block;
-            padding: 12px 24px;
-            background-color: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: bold;
-        }
-
-        .main-btn:hover {
-            background-color: #0056b3;
-        }
-
-        .sub-btn {
-            display: inline-block;
-            padding: 12px 24px;
-            background-color: #6c757d;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: bold;
-        }
-
-        .sub-btn:hover {
-            background-color: #545b62;
-        }
-
-        /* 방송 목록 영역 */
-        .stream-section {
-            margin-bottom: 30px;
-        }
-
-        .section-title {
+        .stream-box-header h2 {
+            margin: 0;
             font-size: 22px;
-            margin-bottom: 15px;
         }
 
-        .stream-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 20px;
-        }
-
-        .stream-card {
-            background-color: white;
-            padding: 22px;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        }
-
-        .stream-card h3 {
-            margin-top: 0;
-            margin-bottom: 12px;
-            color: #333;
-        }
-
-        .stream-card p {
-            margin: 8px 0;
-            color: #555;
-            font-size: 14px;
-        }
-
-        .watch-btn {
-            display: inline-block;
-            margin-top: 15px;
+        .broadcast-btn {
             padding: 10px 16px;
             background-color: #28a745;
             color: white;
             text-decoration: none;
-            border-radius: 4px;
+            border-radius: 5px;
             font-size: 14px;
+            font-weight: bold;
         }
 
-        .watch-btn:hover {
+        .broadcast-btn:hover {
             background-color: #1e7e34;
         }
 
-        /* 서버 상태 영역 */
-        .status-box {
-            background-color: white;
-            padding: 18px 22px;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            display: flex;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 10px;
+        /* 목록 헤더 */
+        .stream-list-header {
+            display: grid;
+            grid-template-columns: 2fr 1.2fr 1fr 120px;
+            padding: 12px 24px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #e5e5e5;
+            font-weight: bold;
             font-size: 14px;
             color: #555;
         }
 
-        .status-item strong {
+        /* 목록 행 */
+        .stream-row {
+            display: grid;
+            grid-template-columns: 2fr 1.2fr 1fr 120px;
+            align-items: center;
+            padding: 14px 24px;
+            border-bottom: 1px solid #eeeeee;
+            font-size: 14px;
+        }
+
+        .stream-row:hover {
+            background-color: #f8f9fa;
+        }
+
+        .stream-row:last-child {
+            border-bottom: none;
+        }
+
+        .stream-title {
+            font-weight: bold;
             color: #333;
         }
 
-        .online {
-            color: #28a745;
-            font-weight: bold;
+        .viewer-count {
+            color: #555;
+        }
+
+        .watch-btn {
+            display: inline-block;
+            text-align: center;
+            padding: 8px 12px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .watch-btn:hover {
+            background-color: #0056b3;
+        }
+
+        .empty-row {
+            padding: 40px 24px;
+            text-align: center;
+            color: #777;
+            font-size: 14px;
+        }
+
+        /* 하단 페이지 영역 */
+        .list-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e5e5e5;
+            background-color: #fafafa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .page-btn,
+        .refresh-btn {
+            padding: 8px 14px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            color: #333;
+            background-color: white;
+        }
+
+        .page-btn:hover,
+        .refresh-btn:hover {
+            background-color: #f0f0f0;
+        }
+
+        .page-info {
+            font-size: 14px;
+            color: #555;
+            min-width: 70px;
+            text-align: center;
+        }
+
+        .refresh-btn {
+            margin-left: 10px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+        }
+
+        .refresh-btn:hover {
+            background-color: #545b62;
+        }
+
+        .disabled {
+            pointer-events: none;
+            opacity: 0.5;
         }
 
         /* 작은 화면 대응 */
-        @media (max-width: 600px) {
+        @media (max-width: 700px) {
             header {
                 padding: 16px 20px;
                 flex-direction: column;
@@ -195,92 +213,98 @@
                 text-align: center;
             }
 
-            .welcome-section h2 {
-                font-size: 24px;
+            .stream-box-header {
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
             }
 
-            .status-box {
-                flex-direction: column;
+            .stream-list-header {
+                display: none;
+            }
+
+            .stream-row {
+                grid-template-columns: 1fr;
+                gap: 6px;
+            }
+
+            .watch-btn {
+                width: 100%;
+                margin-top: 8px;
             }
         }
     </style>
 </head>
 <body>
 
-    <!-- 상단 메뉴 -->
+    <!-- 상단 헤더 -->
     <header>
         <h1>Web Streamer</h1>
         <div class="user-area">
-            <!-- 실제 서버 구현 시 username 부분을 로그인한 사용자명으로 바꾸면 됨 -->
-            <span>사용자님 환영합니다</span>
+            <span>{{USERNAME}}님 환영합니다</span>
             <a href="/logout" class="logout-btn">로그아웃</a>
         </div>
     </header>
 
     <div class="container">
 
-        <!-- 환영 및 주요 기능 영역 -->
-        <section class="welcome-section">
-            <h2>Web Streamer 메인 화면</h2>
-            <p>방송을 시작하거나 현재 진행 중인 방송을 시청해보세요.</p>
+        <section class="stream-box">
 
-            <div class="button-group">
-                <!-- 방송 송출 화면으로 이동 -->
-                <a href="/broadcast" class="main-btn">방송 시작하기</a>
-
-                <!-- 현재는 같은 페이지 새로고침 역할 -->
-                <a href="/main" class="sub-btn">방송 목록 새로고침</a>
+            <!-- 목록 상단 -->
+            <div class="stream-box-header">
+                <h2>현재 진행 중인 방송</h2>
+                <a href="/broadcast" class="broadcast-btn">방송 시작하기</a>
             </div>
+
+            <!-- 목록 컬럼명 -->
+            <div class="stream-list-header">
+                <div>방송명</div>
+                <div>방송자</div>
+                <div>시청자 수</div>
+                <div></div>
+            </div>
+
+            <!-- 
+                서버에서 현재 페이지에 해당하는 방송 목록 5개를 아래 위치에 삽입
+
+                예시:
+                <div class="stream-row">
+                    <div class="stream-title">게임 방송</div>
+                    <div>user01</div>
+                    <div class="viewer-count">3명</div>
+                    <div><a href="/watch?stream=1" class="watch-btn">시청하기</a></div>
+                </div>
+            -->
+
+            {{STREAM_ROWS}}
+
+            <!-- 방송이 하나도 없을 때는 서버에서 위 {{STREAM_ROWS}} 대신 아래 형태를 넣으면 됨 -->
+            <!--
+            <div class="empty-row">
+                현재 진행 중인 방송이 없습니다.
+            </div>
+            -->
+
+            <!-- 하단 페이지 이동 -->
+            <div class="list-footer">
+                <a href="/main?page={{PREV_PAGE}}" class="page-btn {{PREV_DISABLED}}">
+                    이전
+                </a>
+
+                <span class="page-info">
+                    {{CURRENT_PAGE}} / {{TOTAL_PAGES}}
+                </span>
+
+                <a href="/main?page={{NEXT_PAGE}}" class="page-btn {{NEXT_DISABLED}}">
+                    다음
+                </a>
+
+                <a href="/main?page={{CURRENT_PAGE}}" class="refresh-btn">
+                    새로고침
+                </a>
+            </div>
+
         </section>
-
-        <!-- 현재 방송 목록 -->
-        <section class="stream-section">
-            <h2 class="section-title">현재 진행 중인 방송</h2>
-
-            <div class="stream-list">
-
-                <!-- 예시 방송 카드 1 -->
-                <div class="stream-card">
-                    <h3>게임 방송</h3>
-                    <p><strong>방송자:</strong> user01</p>
-                    <p><strong>시청자 수:</strong> 3명</p>
-                    <p><strong>상태:</strong> <span class="online">LIVE</span></p>
-                    <a href="/watch?stream=1" class="watch-btn">시청하기</a>
-                </div>
-
-                <!-- 예시 방송 카드 2 -->
-                <div class="stream-card">
-                    <h3>음악 방송</h3>
-                    <p><strong>방송자:</strong> user02</p>
-                    <p><strong>시청자 수:</strong> 5명</p>
-                    <p><strong>상태:</strong> <span class="online">LIVE</span></p>
-                    <a href="/watch?stream=2" class="watch-btn">시청하기</a>
-                </div>
-
-                <!-- 예시 방송 카드 3 -->
-                <div class="stream-card">
-                    <h3>자유 방송</h3>
-                    <p><strong>방송자:</strong> user03</p>
-                    <p><strong>시청자 수:</strong> 2명</p>
-                    <p><strong>상태:</strong> <span class="online">LIVE</span></p>
-                    <a href="/watch?stream=3" class="watch-btn">시청하기</a>
-                </div>
-
-            </div>
-        </section>
-
-        <!-- 서버 상태 표시 -->
-        <div class="status-box">
-            <div class="status-item">
-                <strong>서버 상태:</strong> <span class="online">연결됨</span>
-            </div>
-            <div class="status-item">
-                <strong>현재 접속자 수:</strong> 10명
-            </div>
-            <div class="status-item">
-                <strong>채팅 서버:</strong> 사용 가능
-            </div>
-        </div>
 
     </div>
 
