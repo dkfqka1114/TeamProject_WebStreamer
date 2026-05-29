@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Streamer - 방송 스튜디오</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            background-color: #212529; /* 방송 집중도를 위해 다크 모드 스타일 적용 */
+            color: #f8f9fa;
+        }
+
+        /* 상단 헤더 */
+        header {
+            background-color: #007bff;
+            color: white;
+            padding: 16px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .user-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .back-btn {
+            color: white;
+            text-decoration: none;
+            border: 1px solid white;
+            padding: 6px 12px;
+            border-radius: 4px;
+        }
+
+        .back-btn:hover {
+            background-color: white;
+            color: #007bff;
+        }
+
+        /* 메인 컨테이너 */
+        .container {
+            max-width: 700px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .studio-box {
+            background-color: #2c3034;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            padding: 30px;
+            text-align: center;
+            border: 1px solid #495057;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 22px;
+            color: #fff;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            background-color: #6c757d;
+            color: white;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .status-badge.streaming {
+            background-color: #dc3545;
+            animation: blink 1.5s infinite;
+        }
+
+        video {
+            width: 100%;
+            max-width: 480px;
+            height: 360px;
+            background: #000;
+            border-radius: 6px;
+            border: 2px solid #495057;
+            object-fit: contain;
+            margin-bottom: 20px;
+        }
+
+        button {
+            width: 100%;
+            max-width: 480px;
+            background-color: #28a745;
+            color: white;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #218838;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Web Streamer Studio</h1>
+        <div class="user-area">
+            <span id="headerUser">스튜디오</span>
+            <a href="/" class="back-btn">로비로 돌아가기</a>
+        </div>
+    </header>
+
+    <div class="container">
+        <section class="studio-box">
+            <h2 id="studioTitle">내 화면 라이브 방송하기</h2>
+            <div id="statusIndicator" class="status-badge">송출 대기 중</div>
+            
+            <br>
+            <video id="localVideo" autoplay muted></video>
+            <canvas id="captureCanvas" style="display:none;"></canvas>
+            
+            <br>
+            <button id="startBtn" onclick="startStreaming()">화면 캡처 및 송출 시작</button>
+        </section>
+    </div>
+
+    <script>
+        // 쿠키에서 현재 로그인한 유저네임 추출 헬퍼 함수
+        const username = document.cookie.split('; ').find(row => row.startsWith('user='))?.split('=')[1] || "Guest";
+        document.getElementById('headerUser').innerText = `${username}님 채널`;
+        document.getElementById('studioTitle').innerText = `${username}님의 라이브 스튜디오`;
+
+        // --- 송출자(Host) 자바스크립트 로직 ---
+        async function startStreaming() {
+            const video = document.getElementById('localVideo');
+            const canvas = document.getElementById('captureCanvas');
+            const ctx = canvas.getContext('2d');
+            const statusIndicator = document.getElementById('statusIndicator');
+            const startBtn = document.getElementById('startBtn');
+            
+            try {
+                // 1. 브라우저 내장 화면 공유 권한 획득
+                const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                    video: { width: 480, height: 360, frameRate: 15 } 
+                });
+                video.srcObject = stream;
+
+                // UI 상태 변경 (송출 중 알림)
+                statusIndicator.innerText = "🔴 LIVE 송출 중";
+                statusIndicator.classList.add("streaming");
+                startBtn.style.backgroundColor = "#6c757d";
+                startBtn.innerText = "방송 송출 중...";
+                startBtn.disabled = true;
+
+                // 2. 0.25초(250ms)마다 현재 비디오 렌더링 프레임을 추출해서 서버로 밀어넣음
+                setInterval(() => {
+                    canvas.width = 480;
+                    canvas.height = 360;
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    
+                    // 용량 감소를 위해 JPEG 포맷 및 퀄리티를 0.4 수준으로 압축
+                    const base64Data = canvas.toDataURL('image/jpeg', 0.4); 
+
+                    // 비동기 POST 요청 시 어떤 방(room)인지 쿠키값 파라미터를 붙여 전송
+                    fetch(`/stream?room=${username}`, {
+                        method: 'POST',
+                        body: base64Data
+                    }).catch(err => console.error("송출 에러:", err));
+                }, 250);
+
+                // 유저가 브라우저 자체 '공유 중지' 버튼을 눌렀을 때의 예외 처리
+                stream.getVideoTracks()[0].onended = function () {
+                    statusIndicator.innerText = "송출 종료됨";
+                    statusIndicator.classList.remove("streaming");
+                    startBtn.style.backgroundColor = "#28a745";
+                    startBtn.innerText = "화면 캡처 및 송출 시작";
+                    startBtn.disabled = false;
+                };
+
+            } catch (err) {
+                alert("화면 공유 권한이 거부되었거나 에러가 발생했습니다.");
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>
