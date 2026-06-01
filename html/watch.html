@@ -244,11 +244,9 @@
     </div>
 
     <script>
-        // 주소창 파라미터 (?room=스트리머ID) 추출
         const urlParams = new URLSearchParams(window.location.search);
         const targetRoom = urlParams.get('room');
 
-        // 서버에서 로그인 사용자명을 치환해서 넣는 방식으로 사용 가능
         const username = "{{USERNAME}}";
 
         const roomTitle = document.getElementById('roomTitle');
@@ -293,11 +291,9 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        // 1. 방 입장 시 서버에 시청자 수 +1 신호 전송
         fetch(`/viewer_heartbeat?room=${targetRoom}&action=enter`, { method: 'POST' })
             .catch(err => console.error(err));
 
-        // 2. 0.25초마다 해당 방송자의 화면 데이터 요청
         const streamInterval = setInterval(() => {
             fetch(`/live?room=${targetRoom}`)
                 .then(res => {
@@ -317,7 +313,7 @@
                 .catch(err => console.error("시청 데이터 수신 에러:", err));
         }, 50);
 
-        // 3. 채팅 전송 함수
+        // 채팅 전송 함수
         function sendChatMessage() {
             const message = chatInput.value.trim();
 
@@ -353,9 +349,6 @@
             }
         });
 
-        // 4. 채팅 수신 Polling
-        // 서버에서 채팅 목록을 JSON 형태로 반환한다고 가정
-        // 예: [{ "user": "user02", "message": "안녕하세요" }]
         let lastChatCount = 0;
 
         const chatInterval = setInterval(() => {
@@ -384,7 +377,6 @@
                 .catch(err => console.error("채팅 수신 에러:", err));
         }, 300);
 
-        // 5. 사용자가 브라우저 탭을 닫거나 이탈할 때 서버에 시청자 수 -1 신호 전송
         window.addEventListener('beforeunload', () => {
             navigator.sendBeacon(`/viewer_heartbeat?room=${targetRoom}&action=leave`);
         });

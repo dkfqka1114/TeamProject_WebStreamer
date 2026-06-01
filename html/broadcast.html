@@ -11,7 +11,7 @@
         body {
             margin: 0;
             font-family: sans-serif;
-            background-color: #212529; /* 방송 집중도를 위해 다크 모드 스타일 적용 */
+            background-color: #212529;
             color: #f8f9fa;
         }
 
@@ -147,13 +147,10 @@
     </div>
 
     <script>
-        // 쿠키에서 현재 로그인한 유저네임 추출 헬퍼 함수
         const username = document.cookie.split('; ').find(row => row.startsWith('user='))?.split('=')[1] || "Guest";
         document.getElementById('headerUser').innerText = `${username}님 채널`;
         document.getElementById('studioTitle').innerText = `${username}님의 라이브 스튜디오`;
 
-        // --- 송출자(Host) 자바스크립트 로직 ---
-        // broadcast.html 내부의 startStreaming 함수 부분을 아래와 같이 튜닝해 주세요.
         async function startStreaming() {
             const video = document.getElementById('localVideo');
             const canvas = document.getElementById('captureCanvas');
@@ -162,7 +159,6 @@
             const startBtn = document.getElementById('startBtn');
             
             try {
-                // [해상도 및 FPS 상향 세팅] 
                 const stream = await navigator.mediaDevices.getDisplayMedia({ 
                     video: { 
                         width: { ideal: 1280 }, 
@@ -178,22 +174,18 @@
                 startBtn.innerText = "방송 송출 중...";
                 startBtn.disabled = true;
 
-                // [전송 주기 50ms로 단축] 초당 20번 전송하여 부드러운 화면 확보
                 setInterval(() => {
-                    // 캔버스 드로잉 규격을 720p 픽셀로 확장
                     canvas.width = 1280;
                     canvas.height = 720;
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    
-                    // 해상도가 커진 만큼 데이터 폭증을 막기 위해 압축률을 0.3으로 제어 (가장 중요 🔥)
-                    // 용량이 편당 100KB~150KB 내외로 조절되어 C 소켓 버퍼가 터지지 않습니다.
+
                     const base64Data = canvas.toDataURL('image/jpeg', 0.3); 
 
                     fetch(`/stream?room=${username}`, {
                         method: 'POST',
                         body: base64Data
                     }).catch(err => console.error("송출 에러:", err));
-                }, 50); // 250ms -> 50ms로 단축
+                }, 50);
 
                 stream.getVideoTracks()[0].onended = function () {
                     statusIndicator.innerText = "송출 종료됨";

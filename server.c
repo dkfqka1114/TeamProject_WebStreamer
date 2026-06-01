@@ -11,17 +11,17 @@
 
 #define PORT 8080
 #define BUFFER_SIZE 65536
-#define MAX_ROOMS 12       
-#define STREAM_SIZE 1500000 // 고해상도 지원을 위한 1.5MB 유지
-#define MAX_CHATS 50        // 한 방당 기억할 최대 최근 채팅 개수
+#define MAX_ROOMS 10
+#define STREAM_SIZE 1500000
+#define MAX_CHATS 50
 
-// 개별 채팅 메시지 구조체
+// 채팅 메시지 구조체
 typedef struct {
     char user[50];
     char message[256];
 } ChatMessage;
 
-// 방송방 구조체 확장 (채팅 공간 포함)
+// 스트리밍룸 구조체
 typedef struct {
     char room_id[100];   
     char stream_buffer[STREAM_SIZE]; 
@@ -29,16 +29,15 @@ typedef struct {
     int viewer_count;    
     time_t last_heartbeat; 
     
-    // [채팅 자원 추가]
     ChatMessage chat_list[MAX_CHATS];
     int chat_count;
 } StreamRoom;
 
-// [글로벌 데이터 공간]
 StreamRoom rooms[MAX_ROOMS] = {0};
-pthread_mutex_t room_mutex = PTHREAD_MUTEX_INITIALIZER; 
+pthread_mutex_t room_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// URL 디코딩 헬퍼 함수 (브라우저가 전송한 %20, %ED%96... 등의 한글/특수문자 파싱용)
+// URL 디코딩 헬퍼 함수
 void url_decode(const char *src, char *dst) {
     int i, len = strlen(src);
     int j = 0;
@@ -58,6 +57,7 @@ void url_decode(const char *src, char *dst) {
     dst[j] = '\0';
 }
 
+// 문자열 치환 함수
 void replace_string(char *src, const char *target, const char *replacement, char *dest) {
     char *p = strstr(src, target);
     if (!p) {
@@ -69,6 +69,7 @@ void replace_string(char *src, const char *target, const char *replacement, char
     sprintf(dest + (p - src), "%s%s", replacement, p + strlen(target));
 }
 
+// 정적 파일 전송 함수
 void send_file(int clnt_sock, const char* file_path) {
     int fd = open(file_path, O_RDONLY);
     if (fd == -1) {
@@ -92,11 +93,11 @@ void send_file(int clnt_sock, const char* file_path) {
     close(fd);
 }
 
-// 템플릿 치환 렌더링 및 페이지네이션 제어
+// 로비 화면 치환 및 전송
 void send_main_page(int clnt_sock, const char* username, int page) {
     int fd = open("./html/main.html", O_RDONLY);
     if (fd == -1) {
-        char error_resp[] = "HTTP/1.1 404 Not Found\r\n\r\n<h1>main2.html Not Found</h1>";
+        char error_resp[] = "HTTP/1.1 404 Not Found\r\n\r\n<h1>main.html Not Found</h1>";
         write(clnt_sock, error_resp, strlen(error_resp));
         return;
     }
@@ -118,7 +119,7 @@ void send_main_page(int clnt_sock, const char* username, int page) {
             if(current_time - rooms[i].last_heartbeat > 5) {
                 rooms[i].is_active = 0;
                 rooms[i].viewer_count = 0;
-                rooms[i].chat_count = 0; // 방 폭파 시 채팅 개수도 초기화
+                rooms[i].chat_count = 0; 
                 memset(rooms[i].stream_buffer, 0, STREAM_SIZE);
             } else {
                 total_active_rooms++;
@@ -195,12 +196,13 @@ void send_main_page(int clnt_sock, const char* username, int page) {
     free(buf2);
 }
 
-// 스레드별 작업 할당부
+// 스레드별 클라이언트 핸들러
 void* handle_client(void* arg) {
     int clnt_sock = *((int*)arg);
     free(arg); 
     pthread_detach(pthread_self());
 
+    // 대용량 수신 버퍼 확보
     char* buffer = (char*)malloc(STREAM_SIZE + 8192);
     if (buffer == NULL) {
         close(clnt_sock);
@@ -208,8 +210,8 @@ void* handle_client(void* arg) {
     }
     
     memset(buffer, 0, STREAM_SIZE + 8192);
-    int read_len = read(clnt_sock, buffer, (STREAM_SIZE + 8192) - 1);
-    if (read_len <= 0) {
+    int total_read = read(clnt_sock, buffer, BUFFER_SIZE - 1); // 먼저 기본 헤더 분량만큼 수신
+    if (total_read <= 0) {
         free(buffer);
         close(clnt_sock);
         return NULL;
@@ -217,16 +219,37 @@ void* handle_client(void* arg) {
 
     char method[10] = {0};
     char path[512] = {0}; 
-    sscanf(buffer, "%s %s", method, path);
+    sscanf(buffer, "%9s %511s", method, path);
+
+    if (strcmp(method, "POST") == 0 && strncmp(path, "/stream", 7) == 0) {
+        char *content_len_ptr = strstr(buffer, "Content-Length:");
+        int content_length = 0;
+        if (content_len_ptr != NULL) {
+            sscanf(content_len_ptr, "Content-Length: %d", &content_length);
+        }
+        
+        char *body_start = strstr(buffer, "\r\n\r\n");
+        if (body_start != NULL) {
+            body_start += 4;
+            int current_body_len = total_read - (body_start - buffer);
+            // 스트림 바디가 덜 왔다면 다 채워질 때까지 연속 read 가동
+            while (current_body_len < content_length && total_read < (STREAM_SIZE + 8192 - 1)) {
+                int r = read(clnt_sock, buffer + total_read, (STREAM_SIZE + 8192) - total_read - 1);
+                if (r <= 0) break;
+                total_read += r;
+                current_body_len = total_read - (body_start - buffer);
+            }
+        }
+    }
 
     char session_username[100] = "Guest";
     char *cookie_ptr = strstr(buffer, "Cookie: user=");
     if (cookie_ptr != NULL) {
-        sscanf(cookie_ptr, "Cookie: user=%[^;\r\n]", session_username);
+        sscanf(cookie_ptr, "Cookie: user=%99[^;\r\n]", session_username); // 버퍼 제한 조치
     }
     int is_logged_in = (strstr(buffer, "Cookie: user=") != NULL);
 
-    // --- 1. GET 라우팅 분기 ---
+    // GET 라우팅 분기
     if (strcmp(method, "GET") == 0) {
         if (strncmp(path, "/", 1) == 0 && (strstr(path, "/main") || strcmp(path, "/") == 0)) {
             if (is_logged_in) {
@@ -260,7 +283,6 @@ void* handle_client(void* arg) {
                 write(clnt_sock, redirect_login, strlen(redirect_login));
             }
         }
-        // 시청 페이지 서빙 시 {{USERNAME}} 치환 가공 처리 추가
         else if (strncmp(path, "/watch", 6) == 0) {
             if (is_logged_in) {
                 int fd = open("./html/watch.html", O_RDONLY);
@@ -291,11 +313,10 @@ void* handle_client(void* arg) {
                 write(clnt_sock, redirect_login, strlen(redirect_login));
             }
         }
-        // [기능 보강 ⭐] 브라우저가 정기적으로 긁어가는 채팅 목록 요청 API 처리 (JSON 반환)
         else if (strncmp(path, "/chat", 5) == 0) {
             char target_room[100] = {0};
             char *query = strstr(path, "room=");
-            if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
+            if (query != NULL) sscanf(query, "room=%99[^&\r\n ]", target_room);
 
             char *json_resp = (char*)malloc(32768);
             strcpy(json_resp, "[");
@@ -305,7 +326,6 @@ void* handle_client(void* arg) {
                 if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
                     for (int j = 0; j < rooms[i].chat_count; j++) {
                         char chat_element[1024];
-                        // 템플릿의 변수 규격명 {"user": "...", "message": "..."} 포맷 조립
                         sprintf(chat_element, "{\"user\":\"%s\",\"message\":\"%s\"}", 
                                 rooms[i].chat_list[j].user, rooms[i].chat_list[j].message);
                         strcat(json_resp, chat_element);
@@ -325,20 +345,28 @@ void* handle_client(void* arg) {
             write(clnt_sock, json_resp, strlen(json_resp));
             free(json_resp);
         }
+        
         else if (strncmp(path, "/live", 5) == 0) {
             char target_room[100] = {0};
             char *query = strstr(path, "room=");
-            if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
+            if (query != NULL) sscanf(query, "room=%99[^&\r\n ]", target_room);
 
-            char* response = (char*)malloc(STREAM_SIZE + 1024);
-            memset(response, 0, STREAM_SIZE + 1024);
-
+            char header[512];
             pthread_mutex_lock(&room_mutex);
             int found = 0;
             for (int i = 0; i < MAX_ROOMS; i++) {
                 if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
-                    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %ld\r\n\r\n%s", 
-                            strlen(rooms[i].stream_buffer), rooms[i].stream_buffer);
+                    long stream_len = strlen(rooms[i].stream_buffer);
+                    sprintf(header, 
+                        "HTTP/1.1 200 OK\r\n"
+                        "Content-Type: text/plain\r\n"
+                        "Content-Length: %ld\r\n\r\n", stream_len);
+                    
+                    write(clnt_sock, header, strlen(header));
+
+                    if (stream_len > 0) {
+                        write(clnt_sock, rooms[i].stream_buffer, stream_len);
+                    }
                     found = 1;
                     break;
                 }
@@ -346,10 +374,9 @@ void* handle_client(void* arg) {
             pthread_mutex_unlock(&room_mutex);
 
             if (!found) {
-                sprintf(response, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+                char not_found[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+                write(clnt_sock, not_found, strlen(not_found));
             }
-            write(clnt_sock, response, strlen(response));
-            free(response);
         }
         else if (strcmp(path, "/logout") == 0) {
             char logout_resp[] = "HTTP/1.1 302 Found\r\nSet-Cookie: user=; Max-Age=0; Path=/\r\nLocation: /login\r\n\r\n";
@@ -360,29 +387,26 @@ void* handle_client(void* arg) {
             write(clnt_sock, error_resp, strlen(error_resp));
         }
     } 
-    // --- 2. POST 라우팅 분기 ---
+    // POST 라우팅 분기
     else if (strcmp(method, "POST") == 0) {
         char *body = strstr(buffer, "\r\n\r\n");
         body = (body != NULL) ? body + 4 : "";
 
-        // [기능 보강 ⭐] 브라우저가 발송한 한글 및 인코딩된 채팅 데이터를 받아서 파싱 후 배열 누적 저장하는 로직
         if (strncmp(path, "/chat", 5) == 0) {
             char target_room[100] = {0};
             char *query = strstr(path, "room=");
-            if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
+            if (query != NULL) sscanf(query, "room=%99[^&\r\n ]", target_room);
 
-            // body 분석: user=아이디&message=메시지내용
             char raw_user[100] = {0}, raw_msg[512] = {0};
             char decoded_user[100] = {0}, decoded_msg[512] = {0};
             
-            if (sscanf(body, "user=%[^&]&message=%s", raw_user, raw_msg) == 2) {
+            if (sscanf(body, "user=%99[^&]&message=%511s", raw_user, raw_msg) == 2) {
                 url_decode(raw_user, decoded_user);
                 url_decode(raw_msg, decoded_msg);
 
                 pthread_mutex_lock(&room_mutex);
                 for (int i = 0; i < MAX_ROOMS; i++) {
                     if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
-                        // 링 버퍼 형식 처리: 꽉 차면 가장 오래된 채팅(0번) 밀어내고 땡김
                         if (rooms[i].chat_count >= MAX_CHATS) {
                             for (int k = 1; k < MAX_CHATS; k++) {
                                 rooms[i].chat_list[k - 1] = rooms[i].chat_list[k];
@@ -390,7 +414,6 @@ void* handle_client(void* arg) {
                             rooms[i].chat_count = MAX_CHATS - 1;
                         }
                         
-                        // 새 메시지 추가
                         int idx = rooms[i].chat_count;
                         strncpy(rooms[i].chat_list[idx].user, decoded_user, 49);
                         strncpy(rooms[i].chat_list[idx].message, decoded_msg, 254);
@@ -407,7 +430,7 @@ void* handle_client(void* arg) {
         else if (strncmp(path, "/stream", 7) == 0) {
             char target_room[100] = {0};
             char *query = strstr(path, "room=");
-            if (query != NULL) sscanf(query, "room=%[^&\r\n ]", target_room);
+            if (query != NULL) sscanf(query, "room=%99[^&\r\n ]", target_room);
 
             pthread_mutex_lock(&room_mutex);
             int target_idx = -1;
@@ -423,9 +446,9 @@ void* handle_client(void* arg) {
                         strcpy(rooms[i].room_id, target_room);
                         rooms[i].is_active = 1;
                         rooms[i].viewer_count = 0;
-                        rooms[i].chat_count = 0; // 초기 생성 시 카운트 리셋
+                        rooms[i].chat_count = 0; 
                         target_idx = i;
-                        printf("[Server] 신규 라이브 방 개설 감지: %s\n", target_room);
+                        printf("[Server] 신규 스트리밍 생성: %s\n", target_room);
                         break;
                     }
                 }
@@ -446,9 +469,9 @@ void* handle_client(void* arg) {
             char action[20] = {0};
             
             char *query_room = strstr(path, "room=");
-            if (query_room != NULL) sscanf(query_room, "room=%[^& ]", target_room);
+            if (query_room != NULL) sscanf(query_room, "room=%99[^& ]", target_room);
             char *query_act = strstr(path, "action=");
-            if (query_act != NULL) sscanf(query_act, "action=%[^&\r\n ]", action);
+            if (query_act != NULL) sscanf(query_act, "action=%19[^&\r\n ]", action);
 
             pthread_mutex_lock(&room_mutex);
             for(int i = 0; i < MAX_ROOMS; i++) {
@@ -463,30 +486,62 @@ void* handle_client(void* arg) {
             char ok_resp[] = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
             write(clnt_sock, ok_resp, strlen(ok_resp));
         }
+        
         else if (strcmp(path, "/register") == 0) {
             char username[100] = {0}, password[100] = {0};
-            if (sscanf(body, "username=%[^&]&password=%s", username, password) == 2) {
-                FILE *fp = fopen("users.txt", "a");
-                if (fp != NULL) {
-                    fprintf(fp, "%s %s\n", username, password);
-                    fclose(fp);
-                    
-                    char alert_msg[] = "<script>alert('회원가입이 완료되었습니다!'); window.location.href = '/login';</script>";
-                    char response[512];
-                    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n%s", strlen(alert_msg), alert_msg);
-                    write(clnt_sock, response, strlen(response));
+            if (sscanf(body, "username=%99[^&]&password=%99s", username, password) == 2) {
+                
+                int id_exists = 0;
+                pthread_mutex_lock(&file_mutex);
+
+                FILE *fp_read = fopen("users.txt", "r");
+                if (fp_read != NULL) {
+                    char file_user[100], file_pass[100];
+                    while (fscanf(fp_read, "%99s %99s", file_user, file_pass) != EOF) {
+                        if (strcmp(username, file_user) == 0) {
+                            id_exists = 1; 
+                            break;
+                        }
+                    }
+                    fclose(fp_read);
                 }
+
+                char alert_msg[512];
+                char response[1024];
+
+                if (id_exists) {
+                    pthread_mutex_unlock(&file_mutex);
+                    
+                    printf("[Server] 회원가입 실패 (중복 ID): %s\n", username);
+                    sprintf(alert_msg, "<script>alert('이미 존재하는 아이디입니다.'); window.history.back();</script>");
+                    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n%s", strlen(alert_msg), alert_msg);
+                } 
+                else {
+                    FILE *fp_write = fopen("users.txt", "a");
+                    if (fp_write != NULL) {
+                        fprintf(fp_write, "%s %s\n", username, password);
+                        fclose(fp_write);
+                    }
+                    pthread_mutex_unlock(&file_mutex);
+
+                    printf("[Server] 회원가입 완료: %s\n", username);
+                    sprintf(alert_msg, "<script>alert('회원가입이 완료되었습니다!'); window.location.href = '/login';</script>");
+                    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n%s", strlen(alert_msg), alert_msg);
+                }
+                write(clnt_sock, response, strlen(response));
             }
-        } 
+        }
         else if (strcmp(path, "/login") == 0) {
             char username[100] = {0}, password[100] = {0};
-            if (sscanf(body, "username=%[^&]&password=%s", username, password) == 2) {
+            if (sscanf(body, "username=%99[^&]&password=%99s", username, password) == 2) {
+                
+                pthread_mutex_lock(&file_mutex);
                 FILE *fp = fopen("users.txt", "r");
                 int login_success = 0;
 
                 if (fp != NULL) {
                     char file_user[100], file_pass[100];
-                    while (fscanf(fp, "%s %s", file_user, file_pass) != EOF) {
+                    while (fscanf(fp, "%99s %99s", file_user, file_pass) != EOF) {
                         if (strcmp(username, file_user) == 0 && strcmp(password, file_pass) == 0) {
                             login_success = 1;
                             break;
@@ -494,6 +549,7 @@ void* handle_client(void* arg) {
                     }
                     fclose(fp);
                 }
+                pthread_mutex_unlock(&file_mutex);
 
                 char alert_msg[512];
                 char response[1024];
