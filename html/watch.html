@@ -137,6 +137,11 @@
             margin-right: 4px;
         }
 
+        .chat-user.streamer {
+            color: #ffc107;
+            text-shadow: 0 0 4px rgba(255, 193, 7, 0.4);
+        }
+
         .chat-system {
             color: #888;
             font-size: 13px;
@@ -212,14 +217,12 @@
 
         <div class="main-layout">
 
-            <!-- 왼쪽: 방송 화면 -->
             <section class="player-box">
                 <div class="screen-wrapper">
                     <img id="playScreen" alt="LIVE 방송 데이터를 대기하고 있습니다.">
                 </div>
             </section>
 
-            <!-- 오른쪽: 채팅창 -->
             <aside class="chat-box">
                 <div class="chat-header">
                     실시간 채팅
@@ -245,7 +248,7 @@
 
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const targetRoom = urlParams.get('room');
+        const targetRoom = urlParams.get('room'); // 현재 방 주인의 ID (스트리머 유저네임)
 
         const username = "{{USERNAME}}";
 
@@ -268,8 +271,12 @@
             msgDiv.className = 'chat-message';
 
             const userSpan = document.createElement('span');
-            userSpan.className = 'chat-user';
-            userSpan.innerText = user + ":";
+            
+            const isStreamer = (user === targetRoom);
+            
+            userSpan.className = 'chat-user' + (isStreamer ? ' streamer' : '');
+            
+            userSpan.innerText = (isStreamer ? '⭐ ' : '') + user + ":";
 
             const messageSpan = document.createElement('span');
             messageSpan.innerText = " " + message;
@@ -332,7 +339,6 @@
                 if (!res.ok) {
                     throw new Error("채팅 전송 실패");
                 }
-
                 chatInput.value = "";
             })
             .catch(err => {
@@ -342,7 +348,6 @@
         }
 
         sendBtn.addEventListener('click', sendChatMessage);
-
         chatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 sendChatMessage();
