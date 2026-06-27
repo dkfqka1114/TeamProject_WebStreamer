@@ -70,7 +70,7 @@ void* handle_client(void* arg) {
     sscanf(buffer, "%9s %511s", method, path);
 
     // TCP 대용량 스트림 분할 수신 안전장치
-    if (strcmp(method, "POST") == 0 && strncmp(path, "/stream", 7) == 0) {
+    if (strcmp(method, "POST") == 0) {
         char *content_len_ptr = strstr(buffer, "Content-Length:");
         int content_length = 0;
         if (content_len_ptr != NULL) sscanf(content_len_ptr, "Content-Length: %d", &content_length);
@@ -78,12 +78,22 @@ void* handle_client(void* arg) {
         char *body_start = strstr(buffer, "\r\n\r\n");
         if (body_start != NULL) {
             body_start += 4;
-            int current_body_len = total_read - (body_start - buffer);
-            while (current_body_len < content_length && total_read < (STREAM_SIZE + 8192 - 1)) {
+            long header_len = body_start - buffer;
+            if (content_length > (STREAM_SIZE + 8192 - 1) - header_len) {
+                char too_large[] = "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\n\r\n";
+                write(clnt_sock, too_large, strlen(too_large));
+                free(buffer);
+                close(clnt_sock);
+                return NULL;
+            }
+
+            int current_body_len = total_read - header_len;
+            while (current_body_len < content_length) {
                 int r = read(clnt_sock, buffer + total_read, (STREAM_SIZE + 8192) - total_read - 1);
                 if (r <= 0) break;
                 total_read += r;
-                current_body_len = total_read - (body_start - buffer);
+                buffer[total_read] = '\0';
+                current_body_len = total_read - header_len;
             }
         }
     }

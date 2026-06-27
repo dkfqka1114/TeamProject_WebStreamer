@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <time.h>
 
 #define MAX_ROOMS 12       
 #define STREAM_SIZE 1500000

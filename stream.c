@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <time.h>
 
 #define MAX_ROOMS 12       
 #define STREAM_SIZE 1500000
@@ -163,19 +164,34 @@ int handle_stream(int clnt_sock, const char* method, const char* path, const cha
         else if (strncmp(path, "/live", 5) == 0) {
             char target_room[100] = {0}; char *query = strstr(path, "room=");
             if (query != NULL) sscanf(query, "room=%99[^&\r\n ]", target_room);
-            char header[512]; pthread_mutex_lock(&room_mutex);
+            char header[512];
+            char *stream_copy = NULL;
+            long stream_len = 0;
+            pthread_mutex_lock(&room_mutex);
             int found = 0;
             for (int i = 0; i < MAX_ROOMS; i++) {
                 if (rooms[i].is_active && strcmp(rooms[i].room_id, target_room) == 0) {
-                    long stream_len = strlen(rooms[i].stream_buffer);
-                    sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %ld\r\n\r\n", stream_len);
-                    write(clnt_sock, header, strlen(header));
-                    if (stream_len > 0) write(clnt_sock, rooms[i].stream_buffer, stream_len); 
+                    stream_len = strlen(rooms[i].stream_buffer);
+                    stream_copy = (char*)malloc(stream_len + 1);
+                    if (stream_copy != NULL) {
+                        memcpy(stream_copy, rooms[i].stream_buffer, stream_len + 1);
+                    }
                     found = 1; break;
                 }
             }
             pthread_mutex_unlock(&room_mutex);
-            if (!found) { char not_found[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"; write(clnt_sock, not_found, strlen(not_found)); }
+            if (found && stream_copy != NULL) {
+                sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %ld\r\n\r\n", stream_len);
+                write(clnt_sock, header, strlen(header));
+                if (stream_len > 0) write(clnt_sock, stream_copy, stream_len);
+                free(stream_copy);
+            } else if (found) {
+                char error_resp[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+                write(clnt_sock, error_resp, strlen(error_resp));
+            } else {
+                char not_found[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+                write(clnt_sock, not_found, strlen(not_found));
+            }
             return 1;
         }
     } 
